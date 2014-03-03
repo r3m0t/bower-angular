@@ -1,5 +1,5 @@
 /**
- * @license AngularJS v1.2.15-build.2364+sha.7c34e1f
+ * @license AngularJS v1.2.15-build.local+sha.9660989
  * (c) 2010-2014 Google, Inc. http://angularjs.org
  * License: MIT
  */
@@ -68,7 +68,7 @@ function minErr(module) {
       return match;
     });
 
-    message = message + '\nhttp://errors.angularjs.org/1.2.15-build.2364+sha.7c34e1f/' +
+    message = message + '\nhttp://errors.angularjs.org/1.2.15-build.local+sha.9660989/' +
       (module ? module + '/' : '') + code;
     for (i = 2; i < arguments.length; i++) {
       message = message + (i == 2 ? '?' : '&') + 'p' + (i-2) + '=' +
@@ -1540,7 +1540,7 @@ function setupModuleLoader(window) {
      * Then you can create an injector and load your modules like this:
      *
      * ```js
-     * var injector = angular.injector(['ng', 'myModule'])
+     * var injector = angular.injector(['ng', 'MyModule'])
      * ```
      *
      * However it's more likely that you'll just use
@@ -1549,7 +1549,7 @@ function setupModuleLoader(window) {
      *
      * @param {!string} name The name of the module to create or retrieve.
      * @param {Array.<string>=} requires If specified then new module is being created. If
-     *        unspecified then the module is being retrieved for further configuration.
+     *        unspecified then the the module is being retrieved for further configuration.
      * @param {Function} configFn Optional configuration function for the module. Same as
      *        {@link angular.Module#config Module#config()}.
      * @returns {module} new module with the {@link angular.Module} api.
@@ -1880,7 +1880,7 @@ function setupModuleLoader(window) {
  * - `codeName` – `{string}` – Code name of the release, such as "jiggling-armfat".
  */
 var version = {
-  full: '1.2.15-build.2364+sha.7c34e1f',    // all of these placeholder strings will be replaced by grunt's
+  full: '1.2.15-build.local+sha.9660989',    // all of these placeholder strings will be replaced by grunt's
   major: 1,    // package task
   minor: 2,
   dot: 15,
@@ -7525,7 +7525,7 @@ function $HttpProvider() {
      *   - **headers** – `{function([headerName])}` – Header getter function.
      *   - **config** – `{Object}` – The configuration object that was used to generate the request.
      *
-     * @property {Array.<Object>} pendingRequests Array of config objects for currently pending
+     * @property {Array.&ltObject&gt;} pendingRequests Array of config objects for currently pending
      *   requests. This is primarily meant to be used for debugging purposes.
      *
      *
@@ -7827,6 +7827,7 @@ function $HttpProvider() {
         /**
          * @ngdoc property
          * @name $http#defaults
+         * @propertyOf ng.$http
          *
          * @description
          * Runtime equivalent of the `$httpProvider.defaults` property. Allows configuration of
@@ -8577,7 +8578,7 @@ function $IntervalProvider() {
       * @description
       * Cancels a task associated with the `promise`.
       *
-      * @param {promise} promise returned by the `$interval` function.
+      * @param {number} promise Promise returned by the `$interval` function.
       * @returns {boolean} Returns `true` if the task was successfully canceled.
       */
     interval.cancel = function(promise) {
@@ -11529,7 +11530,7 @@ function $RootScopeProvider(){
         child.$$listeners = {};
         child.$$listenerCount = {};
         child.$parent = this;
-        child.$$watchers = child.$$nextSibling = child.$$childHead = child.$$childTail = null;
+        child.$$watchers = child.$$digestLimits = child.$$nextSibling = child.$$childHead = child.$$childTail = null;
         child.$$prevSibling = this.$$childTail;
         if (this.$$childHead) {
           this.$$childTail.$$nextSibling = child;
@@ -11690,6 +11691,68 @@ function $RootScopeProvider(){
         };
       },
 
+      /**
+       * @ngdoc function
+       * @name ng.$rootScope.Scope#$digestLimit
+       * @methodOf ng.$rootScope.Scope
+       * @function
+       *
+       * @description
+       * By default, all the watchers are called every time {@link ng.$rootScope.Scope#methods_$digest $digest}
+       * is called. Adding limiters with this function means watchers will only be called when the
+       * return value of any limiter changes.
+       *
+       * If no return value of any limiter changes, then the watchers will be skipped, as well as all the
+       * child scopes (both their watchers and their limiters).
+       *
+       * This can't be done on the `$rootScope`.
+       *
+       * @param {(function()|string)} watchExpression Expression that is evaluated on each
+       *    {@link ng.$rootScope.Scope#methods_$digest $digest} cycle. No change in return value causes
+       *    the watches to be skipped.
+       *
+       *    - `string`: Evaluated as {@link guide/expression expression}
+       *    - `function(scope)`: called with current `scope` as a parameter.
+       *
+       * @param {boolean=} objectEquality Compare object for equality rather than for reference.
+       * @returns {function()} Returns a deregistration function for this limiter.
+       */
+      $digestLimit: function(watchExp, objectEquality) {
+        if (this === this.$root) { throw $rootScopeMinErr('limitRoot',
+                'Can\'t limit root'); }
+
+        var scope = this,
+            get = compileToFn(watchExp, 'watch'),
+            array = scope.$$digestLimits,
+            watcher = {
+              last: initWatchVal,
+              get: get,
+              exp: watchExp,
+              eq: !!objectEquality
+            };
+
+        lastDirtyWatch = null;
+
+        if (typeof watchExp == 'string' && get.constant) {
+          var originalFn = watcher.fn;
+          watcher.fn = function(newVal, oldVal, scope) {
+            originalFn.call(this, newVal, oldVal, scope);
+            arrayRemove(array, watcher);
+          };
+        }
+
+        if (!array) {
+          array = scope.$$digestLimits = [];
+        }
+        // we use unshift since we use a while loop in $digest for speed.
+        // the while loop reads in reverse order.
+        array.unshift(watcher);
+
+        return function() {
+          arrayRemove(array, watcher);
+          lastDirtyWatch = null;
+        };
+      },
 
       /**
        * @ngdoc method
@@ -11879,11 +11942,11 @@ function $RootScopeProvider(){
        */
       $digest: function() {
         var watch, value, last,
-            watchers,
+            digestLimits, watchers,
             asyncQueue = this.$$asyncQueue,
             postDigestQueue = this.$$postDigestQueue,
             length,
-            dirty, ttl = TTL,
+            dirty, limited = false, ttl = TTL,
             next, current, target = this,
             watchLog = [],
             logIdx, logMsg, asyncTask;
@@ -11909,7 +11972,34 @@ function $RootScopeProvider(){
 
           traverseScopesLoop:
           do { // "traverse the scopes" loop
-            if ((watchers = current.$$watchers)) {
+            if ((digestLimits = current.$$digestLimits)) {
+              limited = true;
+              length = digestLimits.length;
+              while (length--) {
+                try {
+                  watch = digestLimits[length];
+                  // Most common watches are on primitives, in which case we can short
+                  // circuit it with === operator, only when === fails do we use .equals
+                  if (watch) {
+                    if ((value = watch.get(current)) !== (last = watch.last) &&
+                        !(watch.eq
+                            ? equals(value, last)
+                            : (typeof value == 'number' && typeof last == 'number'
+                               && isNaN(value) && isNaN(last)))) {
+                      limited = false;
+                      watch.last = watch.eq ? copy(value) : value;
+                    }
+                  }
+                } catch (e) {
+                  clearPhase();
+                  $exceptionHandler(e);
+                }
+              }
+            } else {
+              limited = false;
+            }
+
+            if (!limited && (watchers = current.$$watchers)) {
               // process our watches
               length = watchers.length;
               while (length--) {
@@ -11953,7 +12043,7 @@ function $RootScopeProvider(){
             // Insanity Warning: scope depth-first traversal
             // yes, this code is a bit crazy, but it works and we have tests to prove it!
             // this piece should be kept in sync with the traversal in $broadcast
-            if (!(next = (current.$$childHead ||
+            if (!(next = ((!limited && current.$$childHead) ||
                 (current !== target && current.$$nextSibling)))) {
               while(current !== target && !(next = current.$$nextSibling)) {
                 current = current.$parent;
@@ -12206,7 +12296,7 @@ function $RootScopeProvider(){
        *   - `defaultPrevented` - `{boolean}`: true if `preventDefault` was called.
        *
        * @param {string} name Event name to listen on.
-       * @param {function(event, ...args)} listener Function to call when the event is emitted.
+       * @param {function(event, args...)} listener Function to call when the event is emitted.
        * @returns {function()} Returns a deregistration function for this listener.
        */
       $on: function(name, listener) {
@@ -20365,7 +20455,7 @@ var ngTranscludeDirective = ngDirective({
  * `<script>` element must be specified as `text/ng-template`, and a cache name for the template must be
  * assigned through the element's `id`, which can then be used as a directive's `templateUrl`.
  *
- * @param {string} type Must be set to `'text/ng-template'`.
+ * @param {'text/ng-template'} type Must be set to `'text/ng-template'`.
  * @param {string} id Cache name of the template.
  *
  * @example
